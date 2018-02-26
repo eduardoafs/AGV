@@ -34,49 +34,6 @@ package SysADL.types {
 	datatype VehicleData {
 		attributes destination : Location command : CommandToArm
 	}
-	executable def SendStartMotorEX ( in move : VehicleData ) : out CommandToMotor {
-		"return CommandToMotor::start"
-	}
-	executable def SendCommandEX ( in move : VehicleData ) : out CommandToArm {
-		"return move.command"
-	}
-	executable def SendDestinationEX ( in move : VehicleData ) : out Location {
-		"return move.destination"
-	}
-	executable def NotifyAGVFromMotorEX ( in statusMotor : NotificationFromMotor ) : out NotificationFromMotor {
-		"return statusMotor"
-	}
-	executable def NotifySupervisoryFromMotorEX ( in statusMotor : NotificationFromMotor ) : out NotificationToSupervisory {
-		"if(statusMotor == NotificationFromMotor::started) return NotificationToSupervisory::departed"
-	"else return NotificationToSupervisory::traveling"
-	}
-	
-	executable def CompareStationsEX ( in statusMotor : NotificationFromMotor, in destination : Location, in location : Location ) : out Boolean {
-		"if(destination == location) return true"
-	"else return false"
-	}
-	executable def StopMotorEX ( in comparisonResult : Boolean ) : out CommandToMotor {
-		"if(comparisonResult) return CommandToMotor::stop"
-	}
-	executable def PassedMotorEX ( in comparisonResult : Boolean ) : out NotificationToSupervisory {
-		"if(!comparisonResult) return NotificationToSupervisory::passed"
-	}
-	
-	executable def ControlArmEX ( in cmd : CommandToArm, in statusMotor : NotificationFromMotor ) : out CommandToArm {
-		"if(statusMotor == NotificationFromMotor::stopped) return cmd"
-	"else return CommandToArm::idle"
-	}
-	executable def NotifierArmEX ( in statusArm : NotificationFromArm ) : out NotificationToSupervisory {
-		"return NotificationToSupervisory::arrived"
-	}
-	executable def VehicleTimerEX ( in destination : Location, in location : Location, in cmd : CommandToArm ) : out Status {
-		"param s:Status"
-	"s.destination = destination" "s.location = location" "s.cmd = cmd" "return s"
-	}
-	executable def SendCurrentLocationEX ( in location : Location ) : out
-	Location {
-		"return location"
-	}
 }
 package PortsAGV {
 	import SysADL.types;
@@ -461,332 +418,206 @@ package ComponentsAGV {
 		start : PortsAGV.outCommandToMotor {
 		}
 	}
-activity def VehicleTimerAC {
-		inParameters {
-			destination : SysADL.types.Location, location : SysADL.types.Location, cmd
-			: SysADL.types.CommandToArm
-		}
-		outParameters {
-			status : SysADL.types.Status
-		}
-		acbody body {
-		actions : ActionUse vt {
-				definition VehicleTimerAN pinIn {
-					destination : SysADL.types.Location, location : SysADL.types.Location,
-					cmd : SysADL.types.CommandToArm
-				}
+activity def StartMovingAC ( move : SysADL.types.VehicleData) : cmd :
+	SysADL.types.CommandToArm, destination :
+	SysADL.types.Location, start : SysADL.types.CommandToMotor {
+		body {
+		actions : sc : SendCommandAN {
+				using pins move : SysADL.types.VehicleData
 			}
-		delegate destination to "vt.destination" delegate location to "vt.location"
-			delegate cmd to "vt.cmd" delegate status to vt
+			sd : SendDestinationAN {
+				using pins move : SysADL.types.VehicleData
+			}
+			ssm : SendStartMotorAN {
+				using pins move : SysADL.types.VehicleData
+			}
+			delegate destination to sc delegate cmd to sd delegate start to ssm
+			delegate move to sd.move delegate move to sc.move delegate move to ssm.move
 		}
 	}
-	activity def NotifierMotorAC {
-		inParameters {
-			inStatusMotor : SysADL.types.NotificationFromMotor
-		}
-		outParameters {
-			outStatusMotor : SysADL.types.NotificationFromMotor, ack :
-			SysADL.types.NotificationToSupervisory
-		}
-		acbody body {
-		actions : ActionUse nagvm {
-				definition NotifyAGVFromMotorAN pinIn {
-					statusMotor : SysADL.types.NotificationFromMotor
-				}
-			}
-			ActionUse ssm {
-				definition NotifySupervisoryFromMotorAN pinIn {
-					statusMotor : SysADL.types.NotificationFromMotor
-				}
-			}
-		delegate outStatusMotor to nagvm delegate ack to ssm delegate inStatusMotor to
-			"nagvm.statusMotor" delegate inStatusMotor to "ssm.statusMotor"
-		}
-	}
-	activity def CheckStationAC {
-		inParameters {
-			statusMotor : SysADL.types.NotificationFromMotor, destination :
-			SysADL.types.Location, inLocation : SysADL.types.Location
-		}
-		outParameters {
-			stopMotor : SysADL.types.CommandToMotor, outLocation :
-			SysADL.types.Location, passed : SysADL.types.NotificationToSupervisory
-		}
-		acbody body {
-		actions : ActionUse cs {
-				definition CompareStationsAN pinIn {
-					statusMotor : SysADL.types.NotificationFromMotor, destination :
-					SysADL.types.Location, location : SysADL.types.Location
-				}
-			}
-			ActionUse sm {
-				definition StopMotorAN pinIn {
-					comparisonResult : SysADL.types.Boolean
-				}
-			}
-			ActionUse pm {
-				definition PassedMotorAN pinIn {
-					comparisonResult : SysADL.types.Boolean
-				}
-			}
-			ActionUse scl {
-				definition SendCurrentLocationAN pinIn {
-					location : SysADL.types.Location
-				}
-			}
-			flow from cs to "sm.comparisonResult" flow from cs to "pm.comparisonResult"
-			delegate passed to pm delegate stopMotor to sm delegate destination to
-			Destinations flow from Destinations to "cs.destination" delegate statusMotor
-			to NotificationsMotor flow from NotificationsMotor to "cs.statusMotor"
-			delegate outLocation to scl delegate inLocation to "scl.location" delegate
-			inLocation to "cs.location" DataStore
-			Destinations : "SysADL.types.Location" {
-			}
-		DataStore NotificationsMotor : "SysADL.types.NotificationFromMotor" {
-			}
-		}
-	}
-	activity def ControlArmAC {
-		inParameters {
-			cmd : SysADL.types.CommandToArm, statusMotor :
-			SysADL.types.NotificationFromMotor
-		}
-		outParameters {
-			startArm : SysADL.types.CommandToArm
-		}
-		acbody body {
-		actions : ActionUse ca {
-				definition ControlArmAN pinIn {
-					statusMotor : SysADL.types.NotificationFromMotor, cmd :
-					SysADL.types.CommandToArm
-				}
-			}
-			 delegate startArm to ca delegate statusMotor to
-			"ca.statusMotor"  
-		delegate cmd to "ca.cmd"
-		}
-	}
-	activity def NotifierArmAC {
-		inParameters {
-			statusArm : SysADL.types.NotificationFromArm
-		}
-		outParameters {
-			ack : SysADL.types.NotificationToSupervisory
-		}
-		acbody body {
-		actions : ActionUse na {
-				definition NotifierArmAN pinIn {
-					statusArm : SysADL.types.NotificationFromArm
-				}
-			}
-		delegate statusArm to "na.statusArm" delegate ack to na
-		}
-	}
-	activity def StartMovingAC {
-		inParameters {
-			move : SysADL.types.VehicleData
-		}
-		outParameters {
-			destination : SysADL.types.Location, start : SysADL.types.CommandToMotor,
-			cmd : SysADL.types.CommandToArm
-		}
-		acbody body {
-		actions : ActionUse ssm {
-				definition SendStartMotorAN pinIn {
-					move : SysADL.types.VehicleData
-				}
-			}
-			ActionUse sc {
-				definition SendCommandAN pinIn {
-					move : SysADL.types.VehicleData
-				}
-			}
-			ActionUse sd {
-				definition SendDestinationAN pinIn {
-					move : SysADL.types.VehicleData
-				}
-			}
-		delegate destination to sd delegate cmd to sc delegate start to ssm delegate
-			move to "sd.move" delegate move to "sc.move" delegate move to "ssm.move"
-		}
-	}
-	action def SendStartMotorAN ( move : SysADL.types.VehicleData ) :
+action def SendStartMotorAN ( move : SysADL.types.VehicleData ) :
 	SysADL.types.CommandToMotor {
-	
-	postCondition SendStartMotorEQ ( )
+	post-condition SendStartMotorEQ ( )
 	}
 	action def SendCommandAN ( move : SysADL.types.VehicleData ) :
 	SysADL.types.CommandToArm {
-	
-	postCondition SendCommandEQ ( ) delegate move to "SendCommandEQ.move"
+	post-condition SendCommandEQ ( )
 	}
 	action def SendDestinationAN ( move : SysADL.types.VehicleData ) :
 	SysADL.types.Location {
-	
-	postCondition SendDestinationEQ ( ) delegate move to "SendDestinationEQ.move"
+	post-condition SendDestinationEQ ( )
+	}
+	activity def NotifierMotorAC ( inStatusMotor :
+	SysADL.types.NotificationFromMotor ) : outStatusMotor :
+	SysADL.types.NotificationFromMotor, ack :
+	SysADL.types.NotificationToSupervisory {
+		body {
+		actions : nagvm : NotifyAGVFromMotorAN {
+				using pins statusMotor : SysADL.types.NotificationFromMotor
+			}
+			nsm : NotifySupervisoryFromMotorAN {
+				using pins statusMotor : SysADL.types.NotificationFromMotor
+			}
+			delegate outStatusMotor to nagvm delegate ack to nsm delegate inStatusMotor
+			to nagvm.statusMotor delegate inStatusMotor to nsm.statusMotor
+		}
 	}
 	action def NotifyAGVFromMotorAN ( statusMotor :
 	SysADL.types.NotificationFromMotor ) : SysADL.types.NotificationFromMotor {
-	postCondition NotifyAGVFromMotorEQ ( )
-	delegate statusMotor to "NotifyAGVFromMotorEQ.inStatusMotor"
+	post-condition NotifyAGVFromMotorEQ ( )
 	}
 	action def NotifySupervisoryFromMotorAN ( statusMotor :
 	SysADL.types.NotificationFromMotor ) : SysADL.types.NotificationToSupervisory
 	{
-	
-	postCondition NotifySupervisoryFromMotorEQ ( )
-	delegate statusMotor to "NotifySupervisoryFromMotorEQ.statusMotor"
+	post-condition NotifySupervisoryFromMotorEQ ( )
 	}
-	ConstraintDef SendStartMotorEQ {
-		paramOut {
-			cmd : SysADL.types.CommandToMotor
-		}
-		equation "cmd == CommandToMotor::start"
-	}
-	ConstraintDef SendCommandEQ {
-		paramIn {
-			move : SysADL.types.VehicleData
-		}
-		paramOut {
-			cmd : SysADL.types.CommandToArm
-		}
-		equation "cmd == move.command"
-	}
-	ConstraintDef SendDestinationEQ {
-		paramIn {
-			move : SysADL.types.VehicleData
-		}
-		paramOut {
-			destination : SysADL.types.Location
-		}
-		equation "destination == move.destination"
-	}
-ConstraintDef NotifySupervisoryFromMotorEQ {
-		paramIn {
-			statusMotor : SysADL.types.NotificationFromMotor
-		}
-		paramOut {
-			ack : SysADL.types.NotificationToSupervisory
-		}
-		equation "((statusMotor == NotificationFromMotor::started) -> (ack == NotificationToSupervisory::departed)) || ((statusMotor == NotificationFromMotor::stopped) -> (ack == NotificationToSupervisory::traveling))"
-	}
-	ConstraintDef NotifyAGVFromMotorEQ {
-		paramIn {
-			inStatusMotor : SysADL.types.NotificationFromMotor
-		}
-		paramOut {
-			outStatusMotor : SysADL.types.NotificationFromMotor
-		}
-		equation "outStatusMotor == inStatusMotor"
-	}
-action def ControlArmAN ( cmd : SysADL.types.CommandToArm, statusMotor :
-	SysADL.types.NotificationFromMotor ) : SysADL.types.CommandToArm {
-		postCondition ControlArmEQ ( )
-	delegate cmd to "ControlArmEQ.cmd" delegate statusMotor to
-		"ControlArmEQ.statusMotor"
-	}
-	action def NotifierArmAN ( statusArm : SysADL.types.NotificationFromArm ) :
+	activity def CheckStationAC ( statusMotor :
+	SysADL.types.NotificationFromMotor, destination : SysADL.types.Location,
+	inLocation : SysADL.types.Location ) : stopMotor :
+	SysADL.types.CommandToMotor, outLocation : SysADL.types.Location, passed :
 	SysADL.types.NotificationToSupervisory {
-		postCondition NotifierArmEQ ( )
-	}
-	action def VehicleTimerAN ( destination : SysADL.types.Location, location :
-	SysADL.types.Location, cmd : SysADL.types.CommandToArm ) :
-	SysADL.types.Status {
-		postCondition VehicleTimerEQ ( )
-	delegate destination to "VehicleTimerEQ.dest" delegate location to
-		"VehicleTimerEQ.loc" delegate cmd to "VehicleTimerEQ.cmd"
-	}
-	ConstraintDef ControlArmEQ {
-		paramIn {
-			cmd : SysADL.types.CommandToArm, statusMotor :
-			SysADL.types.NotificationFromMotor
+		body {
+		actions : cs : CompareStationsAN {
+				using pins statusMotor : SysADL.types.NotificationFromMotor destination :
+				SysADL.types.Location location : SysADL.types.Location
+			}
+			scl : SendCurrentLocationAN {
+				using pins location : SysADL.types.Location
+			}
+			sm : StopMotorAN {
+				using pins comparisonResult : SysADL.types.Boolean
+			}
+			pm : PassedMotorAN {
+				using pins comparisonResult : SysADL.types.Boolean
+			}
+			delegate statusMotor to NotificationsMotor delegate destination to
+			Destinations flow from NotificationsMotor to cs.statusMotor flow from
+			Destinations to cs.destination delegate inLocation to cs.location delegate
+			outLocation to scl delegate inLocation to scl.location delegate stopMotor
+			to sm delegate passed to pm flow from cs to sm.comparisonResult flow from
+			cs to pm.comparisonResult datastore NotificationsMotor :
+			SysADL.types.NotificationFromMotor {
+			}
+			datastore Destinations : SysADL.types.Location {
+			}
 		}
-		paramOut {
-			startArm : SysADL.types.CommandToArm
-		}
-		equation
-		"((statusMotor == NotificationFromMotor::stopped) -> (startArm == cmd)) || ((statusMotor == NotificationFromMotor::started) -> (startArm == CommandToArm::idle))"
-	}
-	ConstraintDef NotifierArmEQ {
-		paramOut {
-			ack : SysADL.types.NotificationToSupervisory
-		}
-		equation "ack == NotificationToSupervisory::arrived"
-	}
-	ConstraintDef VehicleTimerEQ {
-		paramIn {
-			dest : SysADL.types.Location, loc : SysADL.types.Location, cmd :
-			SysADL.types.CommandToArm
-		}
-		paramOut {
-			s : SysADL.types.Status
-		}
-		equation "s -> (s.destination == dest && s.location == loc && s.cmd == cmd)"
-	}
-	action def StopMotorAN ( comparisonResult : SysADL.types.Boolean ) :
-	SysADL.types.CommandToMotor {
-		postCondition StopMotorEQ ( )
-	delegate comparisonResult to "StopMotorEQ.result"
 	}
 	action def CompareStationsAN ( statusMotor :
 	SysADL.types.NotificationFromMotor, destination : SysADL.types.Location,
 	location : SysADL.types.Location ) : SysADL.types.Boolean {
-		postCondition CompareStationsEQ ( ) preCondition
-		NotificationMotorIsStartedEQ ( )
-	delegate statusMotor to "NotificationMotorIsStartedEQ.statusMotor" delegate
-		destination to "CompareStationsEQ.dest" delegate location to
-		"CompareStationsEQ.loc"
+	post-condition CompareStationsEQ ( ) pre-condition NotificationMotorIsStartedEQ
+		( )
+	}
+	action def StopMotorAN ( comparisonResult : SysADL.types.Boolean ) :
+	SysADL.types.CommandToMotor {
+	post-condition StopMotorEQ ( )
 	}
 	action def PassedMotorAN ( comparisonResult : SysADL.types.Boolean ) :
 	SysADL.types.NotificationToSupervisory {
-		postCondition PassedMotorEQ ( )
-	delegate comparisonResult to "PassedMotorEQ.result"
+	post-condition PassedMotorEQ ( )
 	}
-	ConstraintDef StopMotorEQ {
-		paramIn {
-			result : SysADL.types.Boolean
-		}
-		paramOut {
-			cmd : SysADL.types.CommandToMotor
-		}
-		equation "result -> (cmd == CommandToMotor::stop)"
-	}
-	ConstraintDef PassedMotorEQ {
-		paramIn {
-			result : SysADL.types.Boolean
-		}
-		paramOut {
-			ack : SysADL.types.NotificationToSupervisory
-		}
-		equation "!result -> (ack == NotificationToSupervisory::passed)"
-	}
-	ConstraintDef CompareStationsEQ {
-		paramIn {
-			dest : SysADL.types.Location, loc : SysADL.types.Location
-		}
-		paramOut {
-			result : SysADL.types.Boolean
-		}
-		equation "((dest == loc) -> (result == true)) || (result == false)"
-	}
-	ConstraintDef NotificationMotorIsStartedEQ {
-		paramIn {
-			statusMotor : SysADL.types.NotificationFromMotor
-		}
-		equation "statusMotor == NotificationFromMotor::started"
-	}
-action def SendCurrentLocationAN ( location : SysADL.types.Location ) :
+	action def SendCurrentLocationAN ( location : SysADL.types.Location ) :
 	SysADL.types.Location {
-		postCondition SendCurrentLocationEQ ( ) delegate location to
-		"SendCurrentLocationEQ.inLocation"
+	post-condition SendCurrentLocationEQ ( )
 	}
-	ConstraintDef SendCurrentLocationEQ {
-		paramIn {
-			inLocation : SysADL.types.Location
+	activity def ControlArmAC ( cmd : SysADL.types.CommandToArm, statusMotor :
+	SysADL.types.NotificationFromMotor ) : startArm : SysADL.types.CommandToArm {
+		body {
+		actions : ca : ControlArmAN {
+				using pins cmd : SysADL.types.CommandToArm statusMotor :
+				SysADL.types.NotificationFromMotor
+			}
+			delegate startArm to ca delegate cmd to ca.cmd delegate statusMotor to
+			ca.statusMotor
 		}
-		paramOut {
-			outLocation : SysADL.types.Location
-		}
-		equation "outLocation == inLocation"
 	}
+	activity def NotifierArmAC ( statusArm : SysADL.types.NotificationFromArm ) :
+	ack : SysADL.types.NotificationToSupervisory {
+		body {
+		actions : na : NotifierArmAN {
+				using pins statusArm : SysADL.types.NotificationFromArm
+			}
+			delegate ack to na delegate statusArm to na.statusArm
+		}
+	}
+	activity def VehicleTimerAC ( destination : SysADL.types.Location, location :
+	SysADL.types.Location, cmd : SysADL.types.CommandToArm ) : status :
+	SysADL.types.Status {
+		body {
+		actions : vt : VehicleTimerAN {
+				using pins cmd : SysADL.types.CommandToArm destination :
+				SysADL.types.Location location : SysADL.types.Location
+			}
+			delegate status to vt delegate cmd to vt.cmd delegate destination to
+			vt.destination delegate location to vt.location
+		}
+	}
+	action def ControlArmAN ( cmd : SysADL.types.CommandToArm, statusMotor :
+	SysADL.types.NotificationFromMotor ) : SysADL.types.CommandToArm {
+	post-condition ControlArmEQ ( )
+	}
+	action def NotifierArmAN ( statusArm : SysADL.types.NotificationFromArm ) :
+	SysADL.types.NotificationToSupervisory {
+	post-condition NotifierArmEQ ( )
+	}
+	action def VehicleTimerAN ( destination : SysADL.types.Location, location :
+	SysADL.types.Location, cmd : SysADL.types.CommandToArm ) :
+	SysADL.types.Status {
+	post-condition VehicleTimerEQ ( )
+	}
+	constraint SendStartMotorEQ () : 
+		cmd : SysADL.types.CommandToMotor {
+			equation = cmd == 'SysADL.types.CommandToMotor::start'
+		}
+	constraint SendDestinationEQ ( move : SysADL.types.VehicleData ) :
+		destination : SysADL.types.Location {
+			equation = destination == 'move.destination'
+		}
+	constraint NotifyAGVFromMotorEQ ( inStatusMotor : SysADL.types.NotificationFromMotor ) :
+		outStatusMotor : SysADL.types.NotificationFromMotor {
+			equation = outStatusMotor == inStatusMotor
+		}
+	constraint SendCommandEQ ( move : SysADL.types.VehicleData ) :
+		cmd : SysADL.types.CommandToArm {
+			equation = cmd == 'move.command'
+		}
+	constraint NotifySupervisoryFromMotorEQ ( statusMotor : SysADL.types.NotificationFromMotor ) :
+		ack : SysADL.types.NotificationToSupervisory {
+			equation = statusMotor == 'SysADL.types.NotificationFromMotor::started' ? 
+			ack == 'SysADL.types.NotificationToSupervisory::departed' : 
+			ack == 'SysADL.types.NotificationToSupervisory::traveling'
+		}
+	constraint NotificationMotorIsStartedEQ () :
+		statusMotor : SysADL.types.NotificationFromMotor {
+			equation = statusMotor == 'SysADL.types.NotificationFromMotor::started'
+		}
+	constraint CompareStationsEQ ( dest : SysADL.types.Location, loc : SysADL.types.Location ) :
+		result : SysADL.types.Boolean {
+			equation = dest == loc ? result == true : result == false
+		}
+	constraint StopMotorEQ ( result : SysADL.types.Boolean ) :
+		cmd : SysADL.types.CommandToMotor {
+			equation = result == true ? cmd == 'SysADL.types.CommandToMotor::stop' : cmd == SysADL.types.Void
+		}
+	constraint PassedMotorEQ ( result : SysADL.types.Boolean ) :
+		ack : SysADL.types.NotificationToSupervisory {
+			equation = result == false ? ack == 'SysADL.types.NotificationToSupervisory::passed' : ack == SysADL.types.Void
+		}
+	constraint SendCurrentLocationEQ ( inLocation : SysADL.types.Location ) :
+		outLocation : SysADL.types.Location {
+			equation = outLocation == inLocation
+		}
+	constraint ControlArmEQ ( cmd : SysADL.types.CommandToArm, statusMotor : SysADL.types.NotificationFromMotor ) :
+		startArm : SysADL.types.CommandToArm {
+			equation = statusMotor == 'SysADL.types.NotificationFromMotor::stopped' ?
+			startArm == cmd : startArm == 'SysADL.types.CommandToArm::idle'
+		}
+	constraint NotifierArmEQ () :
+		ack : SysADL.types.NotificationToSupervisory {
+			equation = ack == 'SysADL.types.NotificationToSupervisory::arrived'
+		}
+	constraint VehicleTimerEQ ( dest : SysADL.types.Location, loc : SysADL.types.Location, cmd : SysADL.types.CommandToArm ) :
+		s : SysADL.types.Status {
+			equation = 's.destination == dest && s.location == loc && s.cmd == cmd'
+		}
 }
